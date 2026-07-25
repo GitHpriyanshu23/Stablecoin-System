@@ -1,0 +1,160 @@
+// Stablecoin System — collateral-backed stablecoin pegged to fiat (USD).
+// Built on Midnight Compact with explicit disclosure for public ledger writes.
+
+pragma language_version 0.23;
+
+import CompactStandardLibrary;
+
+/**
+ * # Stablecoin System
+ *
+ * A single-vault, collateral-backed stablecoin pegged to a fiat unit (USD).
+ * Users lock collateral and mint stablecoins only when the vault stays at or
+ * above a 150% collateralization ratio.
+ *
+ * ## Public data (ledger)
+ * - `vaultState`: whether a vault is currently open
+ * - `totalSupply`: aggregate stablecoins minted
+ * - `totalCollateral`: aggregate collateral locked
+ * - `vaultCollateral` / `vaultDebt`: the active vault's disclosed balances
+ * - `minCollateralRatioBps`: required collateralization in basis points (15000 = 150%)
+ * - `sequence`: nonce used when deriving ownership commitments
+ * - `owner`: public commitment of the vault owner (hash of secret key + sequence)
+ *
+ * ## Private data (witnesses / local state)
+ * - `localSecretKey`: user's secret identity key (never leaves the device)
+ * - `privateCollateralUnits`: collateral amount for the current operation
+ * - `privateStableUnits`: mint / burn amount for the current operation
+ *
+ * ## Privacy guarantees
+ * - The secret key is never written to the ledger and is never returned from circuits.
+ * - Ownership is proven in zero knowledge by showing that `owner` equals
+ *   `publicKey(localSecretKey, sequence)` without revealing the key.
+ * - Operation amounts originate as private witness values; they become public
+ *   only when wrapped in `disclose()` for ledger updates (supply / collateral).
+ * - Observers learn aggregate supply/collateral and the owner commitment, but not
+ *   the secret key or any undisclosed witness-only data.
+ */
+
+export enum VaultState {
+  CLOSED,
+  OPEN
+}
+
+export ledger vaultState: VaultState;
+
+export ledger totalSupply: Counter;
+
+export ledger totalCollateral: Counter;
+
+export ledger vaultCollateral: Uint<16>;
+
+export ledger vaultDebt: Uint<16>;
+
+export ledger minCollateralRatioBps: Uint<16>;
+
+export ledger sequence: Counter;
+
+export ledger owner: Bytes<32>;
+
+constructor() {
+  vaultState = VaultState.CLOSED;
+  vaultCollateral = 0;
+  vaultDebt = 0;
+  minCollateralRatioBps = 15000;
+  sequence.increment(1);
+  owner = pad(32, "");
+}
+
+witness localSecretKey(): Bytes<32>;
+
+witness privateCollateralUnits(): Uint<16>;
+
+witness privateStableUnits(): Uint<16>;
+
+export circuit publicKey(sk: Bytes<32>, seq: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<3, Bytes<32>>>([pad(32, "stablecoin:pk:"), seq, sk]);
+}
+
+circuit assertCollateralized(collateral: Uint<16>, debt: Uint<16>): [] {
+  // 150% collateralization: collateral * 10000 >= debt * 15000
+  // equivalently collateral * 2 >= debt * 3 when ratio is fixed at 150%.
+  assert(
+    (collateral as Uint<32>) * 2 >= (debt as Uint<32>) * 3,
+    "Undercollateralized: vault must remain at or above 150%"
+  );
+}
+
+export circuit openVault(): [] {
+  assert(vaultState == VaultState.CLOSED, "Attempted to open a vault while one is already open");
+
+  const collateral = disclose(privateCollateralUnits());
+  const mintAmt = disclose(privateStableUnits());
+
+  assert(collateral > 0, "Collateral must be greater than zero");
+  assert(mintAmt > 0, "Mint amount must be greater than zero");
+  assertCollateralized(collateral, mintAmt);
+
+  owner = disclose(publicKey(localSecretKey(), sequence as Field as Bytes<32>));
+  vaultCollateral = collateral;
+  vaultDebt = mintAmt;
+  totalCollateral.increment(collateral);
+  totalSupply.increment(mintAmt);
+  vaultState = VaultState.OPEN;
+}
+
+export circuit addCollateral(): [] {
+  assert(vaultState == VaultState.OPEN, "Attempted to add collateral to a closed vault");
+  assert(
+    owner == publicKey(localSecretKey(), sequence as Field as Bytes<32>),
+    "Attempted to add collateral, but not the vault owner"
+  );
+
+  const extra = disclose(privateCollateralUnits());
+  assert(extra > 0, "Collateral deposit must be greater than zero");
+
+  const newCollateral = (vaultCollateral as Uint<32>) + (extra as Uint<32>);
+  assert(newCollateral < 65536, "Collateral overflow");
+  vaultCollateral = newCollateral as Uint<16>;
+  totalCollateral.increment(extra);
+}
+
+export circuit mintStable(): [] {
+  assert(vaultState == VaultState.OPEN, "Attempted to mint against a closed vault");
+  assert(
+    owner == publicKey(localSecretKey(), sequence as Field as Bytes<32>),
+    "Attempted to mint, but not the vault owner"
+  );
+
+  const mintAmt = disclose(privateStableUnits());
+  assert(mintAmt > 0, "Mint amount must be greater than zero");
+
+  const newDebt = (vaultDebt as Uint<32>) + (mintAmt as Uint<32>);
+  assert(newDebt < 65536, "Debt overflow");
+  const newDebt16 = newDebt as Uint<16>;
+  assertCollateralized(vaultCollateral, newDebt16);
+
+  vaultDebt = newDebt16;
+  totalSupply.increment(mintAmt);
+}
+
+export circuit closeVault(): [] {
+  assert(vaultState == VaultState.OPEN, "Attempted to close a vault that is already closed");
+  assert(
+    owner == publicKey(localSecretKey(), sequence as Field as Bytes<32>),
+    "Attempted to close vault, but not the vault owner"
+  );
+
+  const burnAmt = disclose(privateStableUnits());
+  const withdrawAmt = disclose(privateCollateralUnits());
+
+  assert(burnAmt == vaultDebt, "Must repay the full vault debt to close");
+  assert(withdrawAmt == vaultCollateral, "Must withdraw the full vault collateral to close");
+
+  totalSupply.decrement(burnAmt);
+  totalCollateral.decrement(withdrawAmt);
+  vaultDebt = 0;
+  vaultCollateral = 0;
+  vaultState = VaultState.CLOSED;
+  sequence.increment(1);
+}
