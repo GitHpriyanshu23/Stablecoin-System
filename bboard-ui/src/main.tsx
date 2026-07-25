@@ -14,8 +14,8 @@
 // limitations under the License.
 
 /**
- * A Single Page Application (SPA) for connecting to and managing deployed
- * bulletin boards.
+ * A Single Page Application (SPA) for connecting to and managing the
+ * Midnight stablecoin system.
  *
  * @packageDocumentation
  */
@@ -33,7 +33,7 @@ import * as pino from 'pino';
 import { DeployedBoardProvider } from './contexts';
 
 const networkId = import.meta.env.VITE_NETWORK_ID as NetworkId;
-// contract address: 0200dbf964f541e1950883f5b2f539b66fd6111e46ce8e6e9551fbdd180114d5dd5b
+// CONTRACT_ADDRESS=<YOUR_DEPLOYED_CONTRACT_ADDRESS>
 // Ensure that the network IDs are set within the Midnight libraries.
 setNetworkId(networkId);
 

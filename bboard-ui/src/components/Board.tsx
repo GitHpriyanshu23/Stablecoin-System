@@ -1,18 +1,3 @@
-// This file is part of midnightntwrk/example-bboard.
-// Copyright (C) Midnight Foundation
-// SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 import React, { useCallback, useEffect, useState } from 'react';
 import { type ContractAddress } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
 import {
@@ -26,93 +11,95 @@ import {
   Skeleton,
   Typography,
   TextField,
+  Stack,
+  Button,
+  Box,
 } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
-import DeleteIcon from '@mui/icons-material/DeleteOutlined';
-import WriteIcon from '@mui/icons-material/EditNoteOutlined';
 import CopyIcon from '@mui/icons-material/ContentPasteOutlined';
 import StopIcon from '@mui/icons-material/HighlightOffOutlined';
-import { type BBoardDerivedState, type DeployedBBoardAPI } from '../../../api/src/index';
+import { type StablecoinDerivedState, type DeployedStablecoinAPI } from '../../../api/src/index';
 import { useDeployedBoardContext } from '../hooks';
 import { type BoardDeployment } from '../contexts';
 import { type Observable } from 'rxjs';
-import { State } from '../../../contract/src/index';
+import { VaultState } from '../../../contract/src/index';
 import { EmptyCardContent } from './Board.EmptyCardContent';
 
 /** The props required by the {@link Board} component. */
 export interface BoardProps {
-  /** The observable bulletin board deployment. */
+  /** The observable stablecoin deployment. */
   boardDeployment$?: Observable<BoardDeployment>;
 }
 
 /**
- * Provides the UI for a deployed bulletin board contract; allowing messages to be posted or removed
- * following the rules enforced by the underlying Compact contract.
- *
- * @remarks
- * With no `boardDeployment$` observable, the component will render a UI that allows the user to create
- * or join bulletin boards. It requires a `<DeployedBoardProvider />` to be in scope in order to manage
- * these additional boards. It does this by invoking the `resolve(...)` method on the currently in-
- * scope `DeployedBoardContext`.
- *
- * When a `boardDeployment$` observable is received, the component begins by rendering a skeletal view of
- * itself, along with a loading background. It does this until the board deployment receives a
- * `DeployedBBoardAPI` instance, upon which it will then subscribe to its `state$` observable in order
- * to start receiving the changes in the bulletin board state (i.e., when a user posts a new message).
+ * Provides the UI for a deployed stablecoin vault contract.
  */
 export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
   const boardApiProvider = useDeployedBoardContext();
   const [boardDeployment, setBoardDeployment] = useState<BoardDeployment>();
-  const [deployedBoardAPI, setDeployedBoardAPI] = useState<DeployedBBoardAPI>();
+  const [deployedBoardAPI, setDeployedBoardAPI] = useState<DeployedStablecoinAPI>();
   const [errorMessage, setErrorMessage] = useState<string>();
-  const [boardState, setBoardState] = useState<BBoardDerivedState>();
-  const [messagePrompt, setMessagePrompt] = useState<string>();
+  const [boardState, setBoardState] = useState<StablecoinDerivedState>();
+  const [collateralInput, setCollateralInput] = useState('150');
+  const [stableInput, setStableInput] = useState('100');
   const [isWorking, setIsWorking] = useState(!!boardDeployment$);
 
-  // Two simple callbacks that call `resolve(...)` to either deploy or join a bulletin board
-  // contract. Since the `DeployedBoardContext` will create a new board and update the UI, we
-  // don't have to do anything further once we've called `resolve`.
   const onCreateBoard = useCallback(() => boardApiProvider.resolve(), [boardApiProvider]);
   const onJoinBoard = useCallback(
     (contractAddress: ContractAddress) => boardApiProvider.resolve(contractAddress),
     [boardApiProvider],
   );
 
-  // Callback to handle the posting of a message. The message text is captured in the `messagePrompt`
-  // state, and we just need to forward it to the `post` method of the `DeployedBBoardAPI` instance
-  // that we received in the `deployedBoardAPI` state.
-  const onPostMessage = useCallback(async () => {
-    if (!messagePrompt) {
+  const runAction = useCallback(
+    async (action: () => Promise<void>) => {
+      try {
+        if (!deployedBoardAPI) {
+          return;
+        }
+        setIsWorking(true);
+        setErrorMessage(undefined);
+        await action();
+      } catch (error: unknown) {
+        setErrorMessage(error instanceof Error ? error.message : String(error));
+      } finally {
+        setIsWorking(false);
+      }
+    },
+    [deployedBoardAPI],
+  );
+
+  const onOpenVault = useCallback(() => {
+    const collateral = Number(collateralInput);
+    const mint = Number(stableInput);
+    if (!Number.isFinite(collateral) || !Number.isFinite(mint)) {
+      setErrorMessage('Enter valid numeric amounts');
       return;
     }
+    void runAction(() => deployedBoardAPI!.openVault(collateral, mint));
+  }, [collateralInput, stableInput, runAction, deployedBoardAPI]);
 
-    try {
-      if (deployedBoardAPI) {
-        setIsWorking(true);
-        await deployedBoardAPI.post(messagePrompt);
-      }
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsWorking(false);
+  const onAddCollateral = useCallback(() => {
+    const collateral = Number(collateralInput);
+    if (!Number.isFinite(collateral)) {
+      setErrorMessage('Enter a valid collateral amount');
+      return;
     }
-  }, [deployedBoardAPI, setErrorMessage, setIsWorking, messagePrompt]);
+    void runAction(() => deployedBoardAPI!.addCollateral(collateral));
+  }, [collateralInput, runAction, deployedBoardAPI]);
 
-  // Callback to handle the taking down of a message. Again, we simply invoke the `takeDown` method
-  // of the `DeployedBBoardAPI` instance.
-  const onDeleteMessage = useCallback(async () => {
-    try {
-      if (deployedBoardAPI) {
-        setIsWorking(true);
-        await deployedBoardAPI.takeDown();
-      }
-    } catch (error: unknown) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsWorking(false);
+  const onMintStable = useCallback(() => {
+    const mint = Number(stableInput);
+    if (!Number.isFinite(mint)) {
+      setErrorMessage('Enter a valid mint amount');
+      return;
     }
-  }, [deployedBoardAPI, setErrorMessage, setIsWorking]);
+    void runAction(() => deployedBoardAPI!.mintStable(mint));
+  }, [stableInput, runAction, deployedBoardAPI]);
+
+  const onCloseVault = useCallback(() => {
+    void runAction(() => deployedBoardAPI!.closeVault());
+  }, [runAction, deployedBoardAPI]);
 
   const onCopyContractAddress = useCallback(async () => {
     if (deployedBoardAPI) {
@@ -120,7 +107,6 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
     }
   }, [deployedBoardAPI]);
 
-  // Subscribes to the `boardDeployment$` observable so that we can receive updates on the deployment.
   useEffect(() => {
     if (!boardDeployment$) {
       return;
@@ -133,9 +119,6 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
     };
   }, [boardDeployment$]);
 
-  // Subscribes to the `state$` observable on a `DeployedBBoardAPI` if we receive one, allowing the
-  // component to receive updates to the change in contract state; otherwise we update the UI to
-  // reflect the error was received instead.
   useEffect(() => {
     if (!boardDeployment) {
       return;
@@ -153,19 +136,27 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
       return;
     }
 
-    // We need the board API as well as subscribing to its `state$` observable, so that we can invoke
-    // the `post` and `takeDown` methods later.
     setDeployedBoardAPI(boardDeployment.api);
     const subscription = boardDeployment.api.state$.subscribe(setBoardState);
     return () => {
       subscription.unsubscribe();
     };
-  }, [boardDeployment, setIsWorking, setErrorMessage, setDeployedBoardAPI]);
+  }, [boardDeployment]);
+
+  const vaultOpen = boardState?.vaultState === VaultState.OPEN;
 
   return (
-    <Card sx={{ position: 'relative', width: 275, height: 300, minWidth: 275, minHeight: 300 }} color="primary">
+    <Card
+      sx={{ position: 'relative', width: 360, minWidth: 320, minHeight: 420 }}
+      color="primary"
+      data-testid="stablecoin-vault-card"
+    >
       {!boardDeployment$ && (
-        <EmptyCardContent onCreateBoardCallback={onCreateBoard} onJoinBoardCallback={onJoinBoard} />
+        <EmptyCardContent
+          onCreateBoardCallback={onCreateBoard}
+          onJoinBoardCallback={onJoinBoard}
+          defaultContractAddress={boardApiProvider.configuredContractAddress}
+        />
       )}
 
       {boardDeployment$ && (
@@ -179,19 +170,20 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
           <Backdrop
             sx={{ position: 'absolute', color: '#ff0000', zIndex: (theme) => theme.zIndex.drawer + 1 }}
             open={!!errorMessage}
+            onClick={() => setErrorMessage(undefined)}
           >
             <StopIcon fontSize="large" />
-            <Typography component="div" data-testid="board-error-message">
+            <Typography component="div" data-testid="board-error-message" sx={{ px: 2 }}>
               {errorMessage}
             </Typography>
           </Backdrop>
           <CardHeader
             avatar={
               boardState ? (
-                boardState.state === State.VACANT || (boardState.state === State.OCCUPIED && boardState.isOwner) ? (
-                  <LockOpenIcon data-testid="post-unlocked-icon" />
+                vaultOpen && !boardState.isOwner ? (
+                  <LockIcon data-testid="vault-locked-icon" />
                 ) : (
-                  <LockIcon data-testid="post-locked-icon" />
+                  <LockOpenIcon data-testid="vault-unlocked-icon" />
                 )
               ) : (
                 <Skeleton variant="circular" width={20} height={20} />
@@ -199,6 +191,7 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
             }
             titleTypographyProps={{ color: 'primary' }}
             title={toShortFormatContractAddress(deployedBoardAPI?.deployedContractAddress) ?? 'Loading...'}
+            subheader={vaultOpen ? 'Vault open' : 'Vault closed'}
             action={
               deployedBoardAPI?.deployedContractAddress ? (
                 <IconButton title="Copy contract address" onClick={onCopyContractAddress}>
@@ -211,57 +204,86 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
           />
           <CardContent>
             {boardState ? (
-              boardState.state === State.OCCUPIED ? (
-                <Typography data-testid="board-posted-message" sx={{ minHeight: 160 }} color="primary">
-                  {boardState.message}
+              <Stack spacing={1.5}>
+                <Typography variant="body2" color="primary" data-testid="vault-stats">
+                  Supply: {boardState.totalSupply.toString()} · Collateral:{' '}
+                  {boardState.totalCollateral.toString()}
                 </Typography>
-              ) : (
-                <TextField
-                  id="message-prompt"
-                  data-testid="board-message-prompt"
-                  variant="outlined"
-                  focused
-                  fullWidth
-                  multiline
-                  minRows={6}
-                  maxRows={6}
-                  placeholder="Message to post"
-                  size="small"
-                  color="primary"
-                  slotProps={{ htmlInput: { style: { color: 'black' } } }}
-                  onChange={(e) => {
-                    setMessagePrompt(e.target.value);
-                  }}
-                />
-              )
+                <Typography variant="body2" color="primary">
+                  Vault debt: {boardState.vaultDebt.toString()} · Vault collateral:{' '}
+                  {boardState.vaultCollateral.toString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Min ratio: {(Number(boardState.minCollateralRatioBps) / 100).toFixed(0)}% · Owner:{' '}
+                  {boardState.isOwner ? 'you' : vaultOpen ? 'someone else' : 'none'}
+                </Typography>
+                <Box>
+                  <TextField
+                    label="Collateral units"
+                    size="small"
+                    fullWidth
+                    value={collateralInput}
+                    onChange={(e) => setCollateralInput(e.target.value)}
+                    sx={{ mb: 1 }}
+                    slotProps={{ htmlInput: { style: { color: 'black' } } }}
+                  />
+                  <TextField
+                    label="Stablecoin units"
+                    size="small"
+                    fullWidth
+                    value={stableInput}
+                    onChange={(e) => setStableInput(e.target.value)}
+                    slotProps={{ htmlInput: { style: { color: 'black' } } }}
+                  />
+                </Box>
+              </Stack>
             ) : (
-              <Skeleton variant="rectangular" width={245} height={160} />
+              <Skeleton variant="rectangular" width={320} height={180} />
             )}
           </CardContent>
-          <CardActions>
+          <CardActions sx={{ flexWrap: 'wrap', gap: 1, px: 2, pb: 2 }}>
             {deployedBoardAPI ? (
               <React.Fragment>
-                <IconButton
-                  title="Post message"
-                  data-testid="board-post-message-btn"
-                  disabled={boardState?.state === State.OCCUPIED || !messagePrompt?.length}
-                  onClick={onPostMessage}
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={vaultOpen}
+                  onClick={onOpenVault}
+                  data-testid="open-vault-btn"
                 >
-                  <WriteIcon />
-                </IconButton>
-                <IconButton
-                  title="Take down message"
-                  data-testid="board-take-down-message-btn"
-                  disabled={
-                    boardState?.state === State.VACANT || (boardState?.state === State.OCCUPIED && !boardState.isOwner)
-                  }
-                  onClick={onDeleteMessage}
+                  Open vault
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={!vaultOpen || !boardState?.isOwner}
+                  onClick={onAddCollateral}
+                  data-testid="add-collateral-btn"
                 >
-                  <DeleteIcon />
-                </IconButton>
+                  Add collateral
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={!vaultOpen || !boardState?.isOwner}
+                  onClick={onMintStable}
+                  data-testid="mint-stable-btn"
+                >
+                  Mint
+                </Button>
+                <Button
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  disabled={!vaultOpen || !boardState?.isOwner}
+                  onClick={onCloseVault}
+                  data-testid="close-vault-btn"
+                >
+                  Close vault
+                </Button>
               </React.Fragment>
             ) : (
-              <Skeleton variant="rectangular" width={80} height={20} />
+              <Skeleton variant="rectangular" width={180} height={28} />
             )}
           </CardActions>
         </React.Fragment>
@@ -272,7 +294,6 @@ export const Board: React.FC<Readonly<BoardProps>> = ({ boardDeployment$ }) => {
 
 /** @internal */
 const toShortFormatContractAddress = (contractAddress: ContractAddress | undefined): React.ReactElement | undefined =>
-  // Returns a new string made up of the first, and last, 8 characters of a given contract address.
   contractAddress ? (
     <span data-testid="board-address">
       0x{contractAddress?.replace(/^[A-Fa-f0-9]{6}([A-Fa-f0-9]{8}).*([A-Fa-f0-9]{8})$/g, '$1...$2')}

@@ -1,25 +1,11 @@
-// This file is part of midnightntwrk/example-bboard.
-// Copyright (C) Midnight Foundation
-// SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 import React, { useState } from 'react';
 import { type ContractAddress } from '@midnight-ntwrk/midnight-js-protocol/compact-runtime';
-import { CardActions, CardContent, IconButton, Tooltip, Typography } from '@mui/material';
-import BoardAddIcon from '@mui/icons-material/PostAddOutlined';
+import { CardActions, CardContent, IconButton, Tooltip, Typography, Button, Stack } from '@mui/material';
+import VaultIcon from '@mui/icons-material/AccountBalanceOutlined';
 import CreateBoardIcon from '@mui/icons-material/AddCircleOutlined';
 import JoinBoardIcon from '@mui/icons-material/AddLinkOutlined';
 import { TextPromptDialog } from './TextPromptDialog';
+import { CONTRACT_ADDRESS } from '../../../api/src/index';
 
 /**
  * The props required by the {@link EmptyCardContent} component.
@@ -27,49 +13,66 @@ import { TextPromptDialog } from './TextPromptDialog';
  * @internal
  */
 export interface EmptyCardContentProps {
-  /** A callback that will be called to create a new bulletin board. */
   onCreateBoardCallback: () => void;
-  /** A callback that will be called to join an existing bulletin board. */
   onJoinBoardCallback: (contractAddress: ContractAddress) => void;
+  defaultContractAddress?: string;
 }
 
 /**
- * Used when there is no board deployment to render a UI allowing the user to join or deploy bulletin boards.
+ * Used when there is no deployment to render a UI allowing the user to deploy or join.
  *
  * @internal
  */
 export const EmptyCardContent: React.FC<Readonly<EmptyCardContentProps>> = ({
   onCreateBoardCallback,
   onJoinBoardCallback,
+  defaultContractAddress = CONTRACT_ADDRESS,
 }) => {
   const [textPromptOpen, setTextPromptOpen] = useState(false);
+  const canJoinConfigured =
+    !!defaultContractAddress && defaultContractAddress !== CONTRACT_ADDRESS && !defaultContractAddress.includes('<');
 
   return (
     <React.Fragment>
       <CardContent>
         <Typography align="center" variant="h1" color="primary.dark">
-          <BoardAddIcon fontSize="large" />
+          <VaultIcon fontSize="large" />
         </Typography>
-        <Typography data-testid="board-posted-message" align="center" variant="body2" color="primary.dark">
-          Create a new Board, or join an existing one...
+        <Typography data-testid="board-posted-message" align="center" variant="body2" color="primary.dark" sx={{ mb: 1 }}>
+          Deploy a new stablecoin system, or join an existing vault contract.
+        </Typography>
+        <Typography align="center" variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          Configured address: {defaultContractAddress}
         </Typography>
       </CardContent>
       <CardActions disableSpacing sx={{ justifyContent: 'center' }}>
-        <Tooltip title="Create a new board">
-          <IconButton data-testid="board-deploy-btn" onClick={onCreateBoardCallback}>
-            <CreateBoardIcon />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Join an existing board">
-          <IconButton
-            data-testid="board-join-btn"
-            onClick={() => {
-              setTextPromptOpen(true);
-            }}
-          >
-            <JoinBoardIcon />
-          </IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Tooltip title="Deploy a new stablecoin contract">
+            <IconButton data-testid="board-deploy-btn" onClick={onCreateBoardCallback}>
+              <CreateBoardIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Join an existing contract">
+            <IconButton
+              data-testid="board-join-btn"
+              onClick={() => {
+                setTextPromptOpen(true);
+              }}
+            >
+              <JoinBoardIcon />
+            </IconButton>
+          </Tooltip>
+          {canJoinConfigured && (
+            <Button
+              size="small"
+              variant="outlined"
+              data-testid="join-configured-btn"
+              onClick={() => onJoinBoardCallback(defaultContractAddress)}
+            >
+              Join configured
+            </Button>
+          )}
+        </Stack>
       </CardActions>
       <TextPromptDialog
         prompt="Enter contract address"
