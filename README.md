@@ -1,117 +1,152 @@
-# Bulletin Board DApp
+# Stablecoin System
 
-This project is built on the [Midnight Network](https://midnight.network/).
+A collateral-backed Midnight stablecoin pegged to fiat (USD), with private vault ownership proofs and public supply/collateral accounting.
 
-[![Generic badge](https://img.shields.io/badge/Compact%20Compiler-0.30.0-1abc9c.svg)](https://shields.io/)
-[![Generic badge](https://img.shields.io/badge/TypeScript-5.9.3-blue.svg)](https://shields.io/)
+## Contract Address
 
+**This section is mandatory.** Replace the placeholder after you deploy the Compact contract.
 
-> **Use this repo as a template. Do not fork it.**
->  
-> This repository is intended to be used via GitHub’s “Use this template” flow.  
-> Forking this repo is discouraged, as forks are not tracked as independent projects.
+| Network | Contract Address |
+|---------|------------------|
+| Preprod | `<YOUR_DEPLOYED_CONTRACT_ADDRESS>` |
 
-A Midnight smart contract example demonstrating a simple one-item bulletin board with zero-knowledge proofs on testnet. Users can post a single message at a time, and only the message author can remove it.
+```env
+CONTRACT_ADDRESS=<YOUR_DEPLOYED_CONTRACT_ADDRESS>
+VITE_CONTRACT_ADDRESS=<YOUR_DEPLOYED_CONTRACT_ADDRESS>
+```
 
-## Project Structure
+Do **not** remove the placeholder until you have a real deployed address.
+
+## Features
+
+- Open a collateralized vault and mint stablecoins (150% minimum collateralization)
+- Add collateral to an existing vault
+- Mint additional stablecoins against excess collateral
+- Close a vault by fully repaying debt and withdrawing collateral
+- Lace wallet integration in the browser UI
+- CLI for deploy/join and vault operations on Preprod / Preview / standalone
+- Zero-knowledge ownership proofs via Compact witnesses and `disclose()`
+
+## What This Project Does
+
+Users lock collateral and mint a fiat-pegged stablecoin. The ledger tracks aggregate supply and collateral publicly, while each user's secret key stays private. Opening, minting, and closing require proving vault ownership in zero knowledge without revealing that secret key.
+
+## Privacy Model
+
+### Public information
+
+- Vault open/closed status
+- Total stablecoin supply and total collateral locked
+- Active vault collateral and debt amounts (disclosed for ledger updates)
+- Minimum collateral ratio (15000 bps = 150%)
+- Owner commitment (hash of secret key + sequence nonce)
+
+### Private information
+
+- User secret key (`localSecretKey` witness)
+- Pending operation amounts held in local private state before disclosure
+  (`privateCollateralUnits`, `privateStableUnits`)
+
+### What users prove without revealing
+
+- That they know the secret key corresponding to the vault owner commitment
+- That mint/redeem operations preserve the 150% collateralization rule
+- Without publishing the secret key itself
+
+## Tech Stack
+
+- Midnight Compact (`stablecoin.compact`)
+- Midnight.js contract / proof / indexer providers
+- TypeScript + npm workspaces
+- React + Vite + MUI (browser UI)
+- Lace wallet connector
+- Docker proof server
+- Node.js CLI
+
+## Folder Structure
 
 ```
-bulletin-board/
-├── contract/               # Smart contract in Compact language
-│   └── src/               # Contract source and utilities
-├── api/                   # Methods, classes and types for CLI and UI
-├── bboard-cli/            # Command-line interface
-│   └── src/               # CLI implementation
-└── bboard-ui/             # Web browser interface
-    └── src/               # Web UI implementation
+stablecoin-system/
+├── contract/               # Compact contract + witnesses + tests
+│   └── src/stablecoin.compact
+├── api/                    # Contract interaction layer shared by CLI/UI
+├── bboard-cli/             # Command-line interface (scaffold folder name)
+├── bboard-ui/              # Web UI (scaffold folder name)
+├── .env.example            # Environment variable template
+└── README.md
 ```
 
 ## Prerequisites
 
-### 1. Node.js Version Check
+1. **Node.js v22+** (`node --version`)
+2. **Docker** installed and running (proof server)
+3. **Compact toolchain** (`compact --version`)
+4. **Lace wallet** (UI only), network set to Preprod, local proof server `http://localhost:6300`
+5. Preprod faucet funds + tDUST for fees
 
-You need Node.js:
+### Midnight documentation MCP
+
+Connect Midnight docs before development:
 
 ```bash
-node --version
+claude mcp add --transport http midnight-docs https://midnight.mcp.kapa.ai
 ```
 
-Expected output: `v24.11.1` or higher. The repository includes an [.nvmrc](./.nvmrc) pinned to `24.11.1`.
+Or in Cursor: Settings → MCP → Add Server:
 
-If you get a lower version: [Install Node.js LTS](https://nodejs.org/).
-
-### 2. Docker Installation
-
-The [proof server](https://docs.midnight.network/develop/tutorial/using/proof-server) runs in Docker and is required for both CLI and UI to generate zero-knowledge proofs:
-
-```bash
-docker --version
+```
+npx -y @midnight-ntwrk/mcp-server
 ```
 
-Expected output: `Docker version X.X.X`.
+This repo also includes `.cursor/mcp.json` with Midnight MCP entries.
 
-If Docker is not found: [Install Docker Desktop](https://docs.docker.com/desktop/). Make sure Docker Desktop is running.
-
-### 3. Lace Wallet Extension (UI Only)
-
-For the web interface, install the official Lace wallet extension on [Chrome Store](https://chromewebstore.google.com/detail/lace/gafhhkghbfjjkeiendhlofajokpaflmk) or the [Edge Store](https://microsoftedge.microsoft.com/addons/detail/lace/efeiemlfnahiidnjglmehaihacglceia) (tested with version 1.36.0).
-
-After installing, set up the Midnight wallet:
-
-1. Create a **new wallet** — Midnight will appear as a network option
-2. Set **Network** to **Preprod**
-3. Set **Proof server** to **Local (http://localhost:6300)** — this must point to your local proof server started via Docker
-4. Click **Enter Wallet**
-5. Fund your wallet with tNIGHT tokens from the [Preprod Faucet](https://midnight-tmnight-preprod.nethermind.dev/)
-6. Go to **Tokens** in the wallet, click **Generate tDUST**, and confirm the transaction — tDUST tokens are required to pay transaction fees on preprod
-
-## Setup Instructions
-
-### Install Project Dependencies
+## Installation
 
 ```bash
+# Proof server (if not already running)
+docker pull midnightnetwork/proof-server
+docker run -p 6300:6300 midnightnetwork/proof-server
+
+# Root workspace install
 npm install
+
+# Package installs (also covered by workspaces, but explicit per challenge checklist)
+cd api && npm install && cd ..
+cd contract && npm install && cd ..
+cd bboard-cli && npm install && cd ..
+cd bboard-ui && npm install && cd ..
 ```
 
-This repository uses npm workspaces. Run installation once from the repository root.
+## Compile
 
-### Compile the Smart Contract
+```bash
+npm run compact
+```
 
-The Compact compiler (`compactc 0.31.0`) generates TypeScript bindings and zero-knowledge circuits from the smart contract source code:
+Or:
 
 ```bash
 cd contract
-npm run compact    # Compiles the Compact contract
-npm run build      # Copies compiled files to dist/
+npm run compact
 cd ..
 ```
 
-Expected output:
+## Build
 
-```
-> compact
-> compact compile src/bboard.compact ./src/managed/bboard
-
-Compiling 2 circuits:
-  circuit "post" (k=14, rows=10070)
-  circuit "takeDown" (k=14, rows=10087)
-
-> build
-> rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/bboard.compact ./dist
-
+```bash
+npm run build
 ```
 
-### Build the CLI Interface
+CLI-only:
 
 ```bash
 cd bboard-cli
+npm install
 npm run build
 cd ..
 ```
 
-### Build the UI Interface (Optional)
-
-Only needed if you want to use the web interface:
+UI-only:
 
 ```bash
 cd bboard-ui
@@ -119,159 +154,82 @@ npm run build
 cd ..
 ```
 
-## Option 1: CLI Interface
+## Manual Deployment
 
-### Start the Proof Server
+Deployment is **intentionally skipped** in this repository state.
 
-The CLI requires a local proof server running in Docker:
+When you are ready, deploy manually with:
+
+```bash
+NODE_OPTIONS="--max-old-space-size=12288" npm run deploy -- --network preprod
+```
+
+Equivalent CLI entrypoint:
 
 ```bash
 cd bboard-cli
-docker compose -f proof-server-local.yml up -d
+NODE_OPTIONS="--max-old-space-size=12288" npm run preprod-remote
 ```
 
-This uses `midnightntwrk/proof-server:8.0.3` on `http://127.0.0.1:6300`.
+Choose the deploy option in the CLI menu and copy the printed contract address.
 
-### Run the CLI
+## After Deployment
 
-```bash
-# For preprod network
-npm run preprod-remote
+The only remaining manual steps are:
 
-# For preview network
-npm run preview-remote
+1. Deploy the Compact contract (command above).
+2. Copy the deployed contract address.
+3. Replace every occurrence of:
+
+```text
+<YOUR_DEPLOYED_CONTRACT_ADDRESS>
 ```
 
-### Using the CLI
+Typical files to update:
 
-#### Create a Wallet
+- `README.md`
+- `.env.example`
+- `bboard-ui/.env.preprod`
+- `bboard-ui/.env.preview`
+- `api/src/common-types.ts` (`CONTRACT_ADDRESS`)
 
-1. Choose option `1` to build a fresh wallet
-2. The system will generate a wallet address and seed
-3. **Save both the address and seed** - you'll need them later
+No additional coding should be required after that replacement.
 
-Expected output is similar to:
+## Environment Variables
 
-```
-Your wallet seed is: [64-character hex string]
-Using unshielded address: mn_addr_preprod1hdvtst70zfgd8wvh7l8ppp7mcrxnjn56wc5hlxpwflz3fxdykaesrw0ln4 waiting for funds...
-```
+| Variable | Description |
+|----------|-------------|
+| `CONTRACT_ADDRESS` | Deployed Compact contract address placeholder |
+| `VITE_CONTRACT_ADDRESS` | Browser UI configured join address |
+| `VITE_NETWORK_ID` | Midnight network id (`preprod`, `preview`, …) |
+| `VITE_LOGGING_LEVEL` | Pino log level for the UI |
 
-#### Fund Your Wallet
+## Screenshots
 
-Before deploying contracts, you need testnet tokens.
+<!-- Add screenshots after running the UI locally -->
 
-1. Copy your wallet address from the output above
-2. Visit the [faucet](https://midnight-tmnight-preprod.nethermind.dev/)
-3. Paste your address and request funds
-4. Wait for the CLI to detect the funds (takes 2-3 minutes)
+- `[screenshot-home]`
+- `[screenshot-open-vault]`
+- `[screenshot-vault-open]`
 
-Expected output after funding is similar to:
+## Initial Idea
 
-```
-Your NIGHT wallet balance is: 1000000000
-```
+<!-- Fill in your Rise In initial idea write-up -->
 
-#### Deploy Your Contract
-
-1. Choose the contract deployment option
-2. Wait for deployment (takes ~30 seconds)
-3. **Save the contract address** for future use
-
-Expected output:
-
-```
-Deployed bulletin board contract at address: [contract address]
-```
-
-#### Use the Bulletin Board
-
-You can now:
-
-- **Post** a message to the bulletin board
-- **View** the current message
-- **Remove** your message (only if you posted it)
-- **Exit** when done
-
-Each action creates a real transaction on Midnight Testnet using zero-knowledge proofs generated by the proof server.
-
-## Option 2: Web UI Interface
-
-The web interface uses the same proof server and requires additional browser setup.
-
-### Start the Proof Server (if not already running)
-
-If you haven't started the proof server for the CLI, start it now:
-
-```bash
-cd bboard-cli
-docker compose -f proof-server-local.yml up -d
-cd ..
-```
-
-Verify it's running:
-
-```bash
-docker ps
-```
-
-### Start the Web Interface
-
-The UI can run against preprod or preview networks:
-
-```bash
-cd bboard-ui
-
-# For preprod network
-npm run build:start
-
-# For preview network
-npm run build:start:preview
-```
-
-The UI will be available at:
-
-- http://127.0.0.1:8080
-
-### Browser Setup
-
-1. **Open the UI URL** in a browser with Lace wallet extension installed
-2. **Set up Lace wallet** if it's your first time
-3. **Authorize the application** when Lace wallet prompts
-4. Use the bulletin board web interface
-
-## Useful Links
-
-- Get Testnet tNIGHT on [Preprod Faucet](https://midnight-tmnight-preprod.nethermind.dev/) or [Preview Faucet](https://midnight-tmnight-preview.nethermind.dev/)
-- [Midnight Documentation](https://docs.midnight.network/examples/dapps/bboard) - Complete developer guide
-- [Compatibility Matrix](https://docs.midnight.network/relnotes/support-matrix) - Current supported Midnight component versions
-- [Compact Language Guide](https://docs.midnight.network/compact/writing) - Smart contract language reference
-- Get Lace wallet on the [Chrome Store](https://chromewebstore.google.com/detail/lace/gafhhkghbfjjkeiendhlofajokpaflmk) or the [Edge Store](https://microsoftedge.microsoft.com/addons/detail/lace/efeiemlfnahiidnjglmehaihacglceia)
+Stablecoin System: A collateral-backed or algorithmic stablecoin pegged to a fiat currency.
 
 ## Troubleshooting
 
-| Common Issue                       | Solution                                                                                                  |
-| ---------------------------------- |-----------------------------------------------------------------------------------------------------------|
-| `npm install` fails                | Ensure you're using Node `v24.11.1` or newer. Older Node versions can install with warnings but are not the target runtime |
-| Contract compilation fails         | Ensure the Compact toolchain is installed and run `npm run compact` from `contract/`                      |
-| Network connection timeout         | CLI requires internet connection, restart if connection times out                                         |
-| Token funding takes too long       | Wait 1-2 minutes, funding is automatic in CLI                                                             |
-| "Application not authorized" error | Start proof server: `docker compose -f proof-server-local.yml up -d`                                      |
-| Lace wallet not detected           | Install Lace wallet browser extension and refresh page                                                    |
-| Docker issues                      | Ensure Docker Desktop is running, check `docker --version`                                                |
-| Port 6300 in use                   | Run `docker compose down` then restart services                                                           |
-| Dependencies won't install         | Use Node.js LTS version. For older npm versions, you may need `--legacy-peer-deps`                        |
-| Contract deployment fails          | Verify wallet has sufficient balance and network connection                                               |
+| Issue | Fix |
+|-------|-----|
+| Compact compile fails | Ensure `compact --version` works, then rerun `npm run compact` from repo root or `contract/` |
+| Proof / tx errors | Confirm Docker proof server is running on port `6300` |
+| Wallet not found | Install Lace, enable Midnight, set network to Preprod, allow the DApp |
+| Insufficient funds | Use the Preprod faucet and generate tDUST in Lace |
+| Join configured address fails | Replace `<YOUR_DEPLOYED_CONTRACT_ADDRESS>` with a real address first |
+| Node engine warnings | Use Node.js v22+ (repo engines allow `>=22`) |
+| UI build missing keys/zkir | Compile the contract first so `contract/src/managed/stablecoin` exists |
 
-## Notes
+## License
 
-- CLI and UI can run simultaneously and share the same proof server
-- Proof server (Docker) is required for both CLI and UI to generate zero-knowledge proofs
-- Contract must be compiled before building CLI or UI
-- Fund your wallet using the testnet faucet before deploying contracts
-
-## Implementation Notes
-
-- **Transaction fee configuration**  
-  The default `additionalFeeOverhead` value (`500_000_000_000_000_000n`) from `@midnight-ntwrk/testkit-js` is required on the `undeployed` network. Lower values can fail with `BalanceCheckOverspend` on the node side. On remote networks, that overhead requires too much dust, so the CLI overrides it to `1_000n`.
-- CLI private state is stored per contract address, matching the `Midnight.js 4.x` private-state provider model.
+Apache-2.0 / MIT as inherited from the Midnight scaffold packages.

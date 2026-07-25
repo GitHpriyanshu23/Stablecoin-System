@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "midnight-docs": {
+      "url": "https://midnight.mcp.kapa.ai"
+    },
+    "midnight": {
+      "command": "npx",
+      "args": ["-y", "@midnight-ntwrk/mcp-server"]
+    }
+  }
+}
